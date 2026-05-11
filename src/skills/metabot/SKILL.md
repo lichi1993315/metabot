@@ -22,6 +22,10 @@ mb bot <name>                              # Get bot details
 mb talk <botName> <chatId> <prompt>        # Talk to a bot
 mb talk alice/backend-bot <chatId> <prompt> # Talk to a specific peer's bot
 
+# Notifications (no agent task)
+mb notify <botName> <chatId> --title "Title" "content" # Send a notice
+mb notify <botName> <chatId> --card-file /tmp/card.json # Send raw Feishu card payload
+
 # Peers
 mb peers                                   # List peers and their status
 
@@ -79,6 +83,23 @@ curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/talk \
   -d '{"botName":"<bot>","chatId":"<chatId>","prompt":"<message>","sendCards":true}'
 ```
 The `botName` field supports qualified names: `"alice/backend-bot"` routes directly to the peer named "alice".
+
+**Send a notification without invoking an agent task:**
+```bash
+curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/notify \
+  -H "Authorization: Bearer $METABOT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"botName":"<bot>","chatId":"<chatId>","title":"Daily report","content":"Done","color":"green"}'
+```
+
+For Feishu bots, send a native interactive card by providing `mode:"card"` and
+a full card object:
+```bash
+curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/notify \
+  -H "Authorization: Bearer $METABOT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"botName":"<bot>","chatId":"<chatId>","mode":"card","card":{"config":{"wide_screen_mode":true},"header":{"title":{"tag":"plain_text","content":"Daily report"}},"elements":[{"tag":"markdown","content":"**OK**"}]}}'
+```
 
 **Create Feishu bot:**
 ```bash

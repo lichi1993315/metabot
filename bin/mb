@@ -47,6 +47,84 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.a
       -H "$METABOT_AUTH" -H "Content-Type: application/json" \
       -d @-
     ;;
+  # --- Notifications (no agent task) ---
+  notify|n)
+    bot="${1:-}" chat="${2:-}"; shift 2 2>/dev/null || true
+    _mode="notice"
+    _title=""
+    _color=""
+    _dedupe=""
+    _source=""
+    _event_type=""
+    _card_file=""
+    _content=""
+    if [[ -z "${bot:-}" || -z "${chat:-}" ]]; then
+      echo "Usage: mb notify <botName> <chatId> [--title <title>] [--color <color>] [--text|--card|--card-file <file>] [content]"
+      echo "  Examples:"
+      echo "    mb notify metabot oc_xxx --title 'Daily report' --color green 'Done'"
+      echo "    mb notify metabot oc_xxx --card-file /tmp/report-card.json"
+      echo "    generate_card | mb notify metabot oc_xxx --card"
+      exit 1
+    fi
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --title|-t) _title="${2:-}"; shift 2 ;;
+        --color|-c) _color="${2:-}"; shift 2 ;;
+        --text) _mode="text"; shift ;;
+        --card) _mode="card"; shift ;;
+        --card-file) _mode="card"; _card_file="${2:-}"; shift 2 ;;
+        --dedupe-key) _dedupe="${2:-}"; shift 2 ;;
+        --source) _source="${2:-}"; shift 2 ;;
+        --event-type) _event_type="${2:-}"; shift 2 ;;
+        --) shift; _content="${_content:+$_content }$*"; break ;;
+        -*) echo "Unknown notify flag: $1"; exit 1 ;;
+        *) _content="${_content:+$_content }$1"; shift ;;
+      esac
+    done
+    if [[ -n "$_card_file" ]]; then
+      if [[ "$_card_file" == "-" ]]; then
+        _payload="$(cat)"
+      else
+        _payload="$(cat "$_card_file")"
+      fi
+    elif [[ -n "$_content" ]]; then
+      _payload="$_content"
+    elif [[ ! -t 0 ]]; then
+      _payload="$(cat)"
+    else
+      echo "Usage: mb notify <botName> <chatId> [--title <title>] [--color <color>] [--text|--card|--card-file <file>] [content]"
+      exit 1
+    fi
+    python3 - "$bot" "$chat" "$_mode" "$_title" "$_color" "$_dedupe" "$_source" "$_event_type" "$_payload" <<'PY' | \
+    curl -s -X POST "$METABOT_URL/api/notify" \
+      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+      -d @- | _json
+import json
+import sys
+
+bot, chat, mode, title, color, dedupe, source, event_type, payload = sys.argv[1:10]
+body = {"botName": bot, "chatId": chat}
+if mode == "card":
+    body["mode"] = "card"
+    body["card"] = json.loads(payload)
+elif mode == "text":
+    body["mode"] = "text"
+    body["text"] = payload
+else:
+    if title:
+        body["title"] = title
+    body["content"] = payload
+if color:
+    body["color"] = color
+if dedupe:
+    body["dedupeKey"] = dedupe
+if source:
+    body["source"] = source
+if event_type:
+    body["eventType"] = event_type
+print(json.dumps(body, ensure_ascii=False))
+PY
+    ;;
   # --- Task delegation (deprecated alias for talk) ---
   task)
     bot="$1" chat="$2"; shift 2 2>/dev/null || true

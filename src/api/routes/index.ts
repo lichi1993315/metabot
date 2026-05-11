@@ -1,6 +1,7 @@
 export { handleVoiceRoutes } from './voice-routes.js';
 export { handleFileRoutes } from './file-routes.js';
 export { handleTeamRoutes } from './team-routes.js';
+export { handleNotifyRoutes } from './notify-routes.js';
 export { handleTaskRoutes } from './task-routes.js';
 export { handleBotRoutes } from './bot-routes.js';
 export { handleSyncRoutes } from './sync-routes.js';

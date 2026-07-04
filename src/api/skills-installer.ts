@@ -2,11 +2,22 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as url from 'node:url';
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
-/** Skills installed for all platforms. */
-const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'phone-call', 'skill-hub'];
+/** Skills installed for all platforms.
+ *
+ *  Not in this list (opt-in only):
+ *   - `metaskill`     — agent-team generator. Source: src/skills/metaskill/
+ *   - `metaschedule`  — MetaBot's persistent server-side scheduler.
+ *                       Source: src/skills/metaschedule/
+ *   - `metamemory`    — moved to metabot-core; installed per-bot via `mh install metamemory`.
+ *   - `skill-hub`     — moved to metabot-core; installed per-bot via `mh install skill-hub`.
+ *
+ *  Default ad-hoc scheduling is handled by Claude Code's native `CronCreate`
+ *  and `/loop` tools, so the persistent scheduler skill is now opt-in.
+ */
+const COMMON_SKILLS = ['metabot', 'phone-call'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
  *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
@@ -94,38 +105,6 @@ function ensureLarkCliConfig(appId: string, appSecret: string, logger: Logger): 
   }
 }
 
-/**
- * Install a skill from the Skill Hub into a bot's working directory.
- * Writes SKILL.md and optionally extracts references/ from a tar buffer.
- */
-export function installSkillFromHub(
-  workDir: string,
-  skillName: string,
-  skillMd: string,
-  referencesTar: Buffer | undefined,
-  logger: Logger,
-): void {
-  const destDirs = [
-    path.join(workDir, '.claude', 'skills', skillName),
-    path.join(workDir, '.codex', 'skills', skillName),
-  ];
-
-  for (const destDir of destDirs) {
-    fs.mkdirSync(destDir, { recursive: true });
-    fs.writeFileSync(path.join(destDir, 'SKILL.md'), skillMd, 'utf-8');
-
-    if (referencesTar && referencesTar.length > 0) {
-      try {
-        execSync(`tar xf - -C "${destDir}"`, { input: referencesTar, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
-      } catch (err: any) {
-        logger.warn({ err: err.message, skillName, destDir }, 'Failed to extract references tar');
-      }
-    }
-
-    logger.info({ skillName, dest: destDir }, 'Skill installed from Hub');
-  }
-}
-
 function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
   const thisFile = url.fileURLToPath(import.meta.url);
   const thisDir = path.dirname(thisFile);
@@ -146,25 +125,25 @@ function bundledSkillSource(skill: string): string | undefined {
   const thisFile = url.fileURLToPath(import.meta.url);
   const thisDir = path.dirname(thisFile);
   const candidatesBySkill: Record<string, string[]> = {
+    // metaskill / metaschedule are opt-in: not in COMMON_SKILLS, but bundled
+    // here so users who copy them into `~/.claude/skills/` get the source
+    // resolved correctly if they later install a bot with installSkills:true.
     metaskill: [
       path.join(thisDir, '..', 'skills', 'metaskill'),
       path.join(thisDir, '..', '..', 'src', 'skills', 'metaskill'),
     ],
-    metamemory: [
-      path.join(thisDir, '..', 'memory', 'skill'),
-      path.join(thisDir, '..', '..', 'src', 'memory', 'skill'),
+    metaschedule: [
+      path.join(thisDir, '..', 'skills', 'metaschedule'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'metaschedule'),
     ],
     metabot: [
       path.join(thisDir, '..', 'skills', 'metabot'),
+      path.join(thisDir, '..', '..', 'packages', 'skills', 'metabot'),
       path.join(thisDir, '..', '..', 'src', 'skills', 'metabot'),
     ],
     voice: [
       path.join(thisDir, '..', 'skills', 'voice'),
       path.join(thisDir, '..', '..', 'src', 'skills', 'voice'),
-    ],
-    'skill-hub': [
-      path.join(thisDir, '..', 'skills', 'skill-hub'),
-      path.join(thisDir, '..', '..', 'src', 'skills', 'skill-hub'),
     ],
   };
   return candidatesBySkill[skill]?.find((candidate) => fs.existsSync(candidate));

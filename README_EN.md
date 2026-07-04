@@ -110,7 +110,7 @@ Use the current project's .claude config to create Codex-compatible .codex/skill
 - if .claude/agents/*.md exists, merge those subagent roles, routing tables, and workflows into AGENTS.md
 ```
 
-If the host disables unprivileged user namespaces, Codex CLI's `workspace-write` sandbox can fail before commands run with `bwrap: No permissions to create a new namespace`. MetaBot defaults Codex to `danger-full-access` to avoid that failure; set `CODEX_SANDBOX` or `codex.sandbox` explicitly if you want stricter isolation.
+If the host disables unprivileged user namespaces, Codex CLI's `workspace-write` sandbox can fail before commands run with `bwrap: No permissions to create a new namespace`. MetaBot defaults Codex to `danger-full-access` to avoid that failure; set `CODEX_SANDBOX` or `codex.sandbox` explicitly if you want stricter isolation. Use `codex.chatPermissions` for per-chat isolation, for example defaulting chats to `read-only` while allowing selected chat IDs to run with `danger-full-access`.
 
 Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The Agent Bus lets them delegate to each other — the calling bot doesn't need to know which engine is on the other side.
 

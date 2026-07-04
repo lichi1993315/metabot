@@ -110,7 +110,7 @@ Claude/Kimi 和 Codex 的发现路径不同。MetaBot 安装、更新和 Skill H
 - 如果存在 .claude/agents/*.md，把这些 subagent 的角色、路由表和工作流整合进 AGENTS.md
 ```
 
-如果你的宿主机禁用了 unprivileged user namespace，Codex CLI 的 `workspace-write` sandbox 可能在命令执行前报 `bwrap: No permissions to create a new namespace`。MetaBot 的 Codex 默认改用 `danger-full-access` 避开这个问题；需要更强隔离时可以通过 `CODEX_SANDBOX` 或 `codex.sandbox` 显式覆盖。
+如果你的宿主机禁用了 unprivileged user namespace，Codex CLI 的 `workspace-write` sandbox 可能在命令执行前报 `bwrap: No permissions to create a new namespace`。MetaBot 的 Codex 默认改用 `danger-full-access` 避开这个问题；需要更强隔离时可以通过 `CODEX_SANDBOX` 或 `codex.sandbox` 显式覆盖。也可以用 `codex.chatPermissions` 做按 chatId 的权限隔离，例如默认 `read-only`，只给指定会话 `danger-full-access`。
 
 前端 Bot 用 Claude、后端 Bot 用 Kimi？完全可以。Agent 总线让它们互相委派任务，对面跑什么引擎对调用方透明。
 

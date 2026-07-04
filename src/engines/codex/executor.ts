@@ -16,6 +16,7 @@ import {
   translateCodexJsonEvent,
   type CodexJsonEvent,
 } from './jsonl-translator.js';
+import { resolveCodexChatConfig } from './chat-permission-policy.js';
 
 const isWindows = process.platform === 'win32';
 const FALLBACK_CODEX_CONTEXT_WINDOW = 272000;
@@ -304,15 +305,17 @@ export class CodexExecutor {
   startExecution(options: ExecutorOptions): ExecutionHandle {
     const { prompt, cwd, sessionId, abortController, outputsDir, apiContext } = options;
     const codexConfig = this.config.codex ?? {};
-    const model = options.model ?? codexConfig.model;
-    const modelMetadata = resolveCodexModelMetadata(codexConfig, model);
+    const resolvedConfig = resolveCodexChatConfig(codexConfig, apiContext?.chatId);
+    const effectiveCodexConfig = resolvedConfig.config;
+    const model = options.model ?? effectiveCodexConfig.model;
+    const modelMetadata = resolveCodexModelMetadata(effectiveCodexConfig, model);
     const fullPrompt = this.buildPromptWithContext(prompt, outputsDir, apiContext);
     const queue = new AsyncQueue<SDKMessage>();
     const state = createCodexTranslatorState({
       model: modelMetadata.model,
       contextWindow: modelMetadata.contextWindow,
     });
-    const args = buildCodexArgs(codexConfig, cwd, fullPrompt, sessionId, model, options.reasoningEffort);
+    const args = buildCodexArgs(effectiveCodexConfig, cwd, fullPrompt, sessionId, model, options.reasoningEffort);
     const startTime = Date.now();
     let child: ChildProcess | undefined;
     let sawResult = false;
@@ -320,8 +323,20 @@ export class CodexExecutor {
     let stderr = '';
     let stdoutBuffer = '';
 
-    const executable = resolveCodexPath(codexConfig.executable);
-    this.logger.info({ cwd, hasSession: !!sessionId, outputsDir, executable, engine: 'codex' }, 'Starting Codex execution');
+    const executable = resolveCodexPath(effectiveCodexConfig.executable);
+    this.logger.info({
+      cwd,
+      hasSession: !!sessionId,
+      outputsDir,
+      executable,
+      engine: 'codex',
+      chatId: apiContext?.chatId,
+      chatPolicySource: resolvedConfig.policySource,
+      approvalPolicy: effectiveCodexConfig.approvalPolicy ?? 'never',
+      sandbox: effectiveCodexConfig.dangerouslyBypassApprovalsAndSandbox
+        ? 'bypass'
+        : effectiveCodexConfig.sandbox ?? 'danger-full-access',
+    }, 'Starting Codex execution');
 
     const finishWithError = (message: string): void => {
       if (sawResult) return;
@@ -366,7 +381,7 @@ export class CodexExecutor {
     try {
       child = spawn(executable, args, {
         cwd,
-        env: buildCodexEnv(codexConfig),
+        env: buildCodexEnv(effectiveCodexConfig),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (err: any) {

@@ -47,6 +47,7 @@
 | `allowedTools` | 否 | `Read,Edit,Write,Glob,Grep,Bash` | 工具白名单（仅 Claude） |
 | `outputsBaseDir` | 否 | `/tmp/metabot-outputs` | 输出文件目录 |
 | `kimi` | 否 | — | Kimi 专用配置（仅当 `engine: "kimi"` 时） — 见下方 |
+| `codex` | 否 | — | Codex 专用配置（仅当 `engine: "codex"` 时） — 见下方 |
 
 ### Kimi 引擎选项
 
@@ -73,6 +74,37 @@
 | `kimi.executable` | (自动) | 覆盖 `kimi` CLI 二进制路径 |
 
 Kimi 需要先执行一次 `kimi login`（安装 `uv tool install kimi-cli` 后，在另外的终端运行）。授权与 Kimi CLI 共享 — 无需 API Key。
+
+### Codex 引擎选项
+
+当 `engine: "codex"` 时，`codex` 对象用于配置 Codex CLI 行为。`chatPermissions` 会在 Codex 进程启动前，按 chatId 降低或放宽实际 sandbox：
+
+```json
+{
+  "name": "coding-bot",
+  "engine": "codex",
+  "feishuAppId": "cli_xxx",
+  "feishuAppSecret": "...",
+  "defaultWorkingDirectory": "/home/user/project",
+  "codex": {
+    "model": "gpt-5.5",
+    "chatPermissions": {
+      "default": {
+        "approvalPolicy": "never",
+        "sandbox": "read-only"
+      },
+      "chats": {
+        "oc_write_allowed": {
+          "sandbox": "danger-full-access",
+          "dangerouslyBypassApprovalsAndSandbox": true
+        }
+      }
+    }
+  }
+}
+```
+
+精确 chat 配置优先于 `default`。只要 policy 是 `read-only` 或 `workspace-write`，就会禁用全局 `dangerouslyBypassApprovalsAndSandbox`；只有该 chat policy 显式设为 `true` 时才允许 bypass。
 
 ## 工作原理
 

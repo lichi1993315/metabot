@@ -46,7 +46,19 @@
         "apiKey": "sk-optional-openai-compatible-key",
         "baseUrl": "https://api.openai.com/v1",
         "approvalPolicy": "never",
-        "sandbox": "workspace-write"
+        "sandbox": "workspace-write",
+        "chatPermissions": {
+          "default": {
+            "approvalPolicy": "never",
+            "sandbox": "read-only"
+          },
+          "chats": {
+            "oc_write_allowed": {
+              "sandbox": "danger-full-access",
+              "dangerouslyBypassApprovalsAndSandbox": true
+            }
+          }
+        }
       }
     }
   ],

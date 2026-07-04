@@ -47,6 +47,7 @@ Set `BOTS_CONFIG=./bots.json` in `.env` to enable multi-bot mode:
 | `allowedTools` | No | `Read,Edit,Write,Glob,Grep,Bash` | Tool whitelist (Claude only) |
 | `outputsBaseDir` | No | `/tmp/metabot-outputs` | Output files directory |
 | `kimi` | No | — | Kimi-specific options (only when `engine: "kimi"`) — see below |
+| `codex` | No | — | Codex-specific options (only when `engine: "codex"`) — see below |
 
 ### Kimi engine options
 
@@ -73,6 +74,37 @@ When `engine: "kimi"`, the `kimi` object configures Kimi CLI behavior:
 | `kimi.executable` | (auto) | Override path to `kimi` CLI binary |
 
 Kimi requires a one-time `kimi login` (run it in a separate terminal after installing `kimi-cli` via `uv tool install kimi-cli`). Authentication is shared with the Kimi CLI — no API key needed.
+
+### Codex engine options
+
+When `engine: "codex"`, the `codex` object configures Codex CLI behavior. `chatPermissions` can lower or raise the effective Codex sandbox per chat before the Codex process is spawned:
+
+```json
+{
+  "name": "coding-bot",
+  "engine": "codex",
+  "feishuAppId": "cli_xxx",
+  "feishuAppSecret": "...",
+  "defaultWorkingDirectory": "/home/user/project",
+  "codex": {
+    "model": "gpt-5.5",
+    "chatPermissions": {
+      "default": {
+        "approvalPolicy": "never",
+        "sandbox": "read-only"
+      },
+      "chats": {
+        "oc_write_allowed": {
+          "sandbox": "danger-full-access",
+          "dangerouslyBypassApprovalsAndSandbox": true
+        }
+      }
+    }
+  }
+}
+```
+
+Exact chat entries win over `default`. A read-only or workspace-write policy disables global `dangerouslyBypassApprovalsAndSandbox` unless that exact policy explicitly sets it to `true`.
 
 ## How It Works
 

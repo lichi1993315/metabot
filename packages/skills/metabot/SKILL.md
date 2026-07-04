@@ -327,6 +327,11 @@ metabot voice call|transcript|list|config|tts …       # RTC voice call + TTS
 metabot health                            # health check
 ```
 
+For Codex bots, bridge operators can isolate filesystem permissions per chat
+with `codex.chatPermissions` in `bots.json`. The bridge resolves the effective
+Codex sandbox before spawning `codex exec`, so a read-only chat receives
+`--sandbox read-only` even if the bot's global Codex config is writable.
+
 **`talk` — two distinct paths.** `metabot talk` (here) hits the **bridge**
 `/api/talk` on `localhost:9100` for local + peer-federated routing. `metabot
 agents talk` (above) is the **central-registry** P2P path that resolves a peer

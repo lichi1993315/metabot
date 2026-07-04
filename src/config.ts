@@ -37,6 +37,8 @@ loadEnvFiles();
 /** Agent engine backing a bot. */
 export type EngineName = 'claude' | 'kimi' | 'codex';
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type CodexApprovalPolicy = 'untrusted' | 'on-failure' | 'on-request' | 'never';
+export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
@@ -152,15 +154,30 @@ export interface CodexBotConfig {
   apiKey?: string;
   /** OpenAI-compatible API base URL for Codex CLI API-key mode. */
   baseUrl?: string;
-  approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
-  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  approvalPolicy?: CodexApprovalPolicy;
+  sandbox?: CodexSandboxMode;
   dangerouslyBypassApprovalsAndSandbox?: boolean;
+  /** Per-chat permission overrides applied before spawning Codex CLI. */
+  chatPermissions?: CodexChatPermissionsConfig;
   /** Context window size in tokens for display only. */
   contextWindow?: number;
   /** Default reasoning effort for Codex CLI (`model_reasoning_effort`). */
   reasoningEffort?: CodexReasoningEffort;
   extraArgs?: string[];
   env?: Record<string, string>;
+}
+
+export interface CodexChatPermissionPolicy {
+  approvalPolicy?: CodexApprovalPolicy;
+  sandbox?: CodexSandboxMode;
+  dangerouslyBypassApprovalsAndSandbox?: boolean;
+}
+
+export interface CodexChatPermissionsConfig {
+  /** Fallback policy for chats without an explicit entry. */
+  default?: CodexChatPermissionPolicy;
+  /** Exact chatId to policy mapping. */
+  chats?: Record<string, CodexChatPermissionPolicy>;
 }
 
 /** Feishu bot config (extends base with Feishu credentials). */
@@ -262,9 +279,11 @@ export interface CodexJsonConfig {
   apiKey?: string;
   /** OpenAI-compatible API base URL for Codex CLI API-key mode. */
   baseUrl?: string;
-  approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
-  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  approvalPolicy?: CodexApprovalPolicy;
+  sandbox?: CodexSandboxMode;
   dangerouslyBypassApprovalsAndSandbox?: boolean;
+  /** Per-chat permission overrides applied before spawning Codex CLI. */
+  chatPermissions?: CodexChatPermissionsConfig;
   /** Context window size in tokens for display only. */
   contextWindow?: number;
   reasoningEffort?: CodexReasoningEffort;

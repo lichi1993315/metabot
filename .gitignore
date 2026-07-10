@@ -31,6 +31,7 @@ ios/AuthKey*.p8
 # Engine-installed skill bundles (each bot installs from central skill hub on its own)
 .claude/skills/
 .codex/
+.worktrees/
 
 # Per-engine project instructions — CLAUDE.md is canonical, AGENTS.md is the codex-engine mirror kept local-only
 AGENTS.md

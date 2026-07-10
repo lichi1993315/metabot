@@ -19,6 +19,14 @@ import type { SessionRegistry } from '../../session/session-registry.js';
 import type { ActivityStore } from '../activity-store.js';
 import type { AgentTeamStore } from '../../agent-teams/team-store.js';
 import type { AgentTeamSupervisor } from '../../agent-teams/team-supervisor.js';
+import type { IMessageSender } from '../../bridge/message-sender.interface.js';
+
+export interface NotifyRouteContext {
+  registry: {
+    get(name: string): { sender: IMessageSender } | undefined;
+  };
+  logger: Logger;
+}
 
 export interface RouteContext {
   registry: BotRegistry;

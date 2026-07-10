@@ -1,6 +1,6 @@
 import type * as http from 'node:http';
 import { jsonResponse, parseJsonBody } from './helpers.js';
-import type { RouteContext } from './types.js';
+import type { NotifyRouteContext } from './types.js';
 
 const VALID_COLORS = new Set(['blue', 'green', 'red', 'orange', 'yellow', 'grey', 'purple', 'wathet']);
 const DEDUPE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -59,7 +59,7 @@ export function clearNotifyDedupeCacheForTests(): void {
 }
 
 export async function handleNotifyRoutes(
-  ctx: RouteContext,
+  ctx: NotifyRouteContext,
   req: http.IncomingMessage,
   res: http.ServerResponse,
   method: string,

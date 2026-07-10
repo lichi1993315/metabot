@@ -21,6 +21,7 @@ import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 
 import { SessionRegistry } from './session/session-registry.js';
+import { isNotifyOnlyMode, runNotifyOnlyRuntime } from './notify/notify-only-runtime.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -187,6 +188,11 @@ async function main() {
   const appConfig = loadAppConfig();
   const logger = createLogger(appConfig.log.level);
   applyBotFilter(appConfig, logger);
+
+  if (isNotifyOnlyMode()) {
+    await runNotifyOnlyRuntime(appConfig, logger);
+    return;
+  }
 
   // Read (and clear) the restart breadcrumb left by `metabot restart/update`,
   // so the first turn in each chat after a restart can be reminded not to

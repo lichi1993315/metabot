@@ -409,6 +409,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 |------|------|------|
 | `API_PORT` | 9100 | HTTP API 端口 |
 | `API_SECRET` | — | Bearer 认证（同时保护 API 和 Web UI） |
+| `METABOT_NOTIFY_ONLY` | `false` | 设为严格值 `true` 时只启动出站飞书通知 API；需要 `API_SECRET`，不启动消息长连接、调度器、Agent、Peer 或 Web UI。 |
 | `METABOT_CORE_URL` | `http://localhost:9200` | metabot-core 服务地址（MetaMemory + Skill Hub + Agents + T5T），本地自托管或填你自己的远程地址 |
 | `METABOT_CORE_TOKEN` | 读 `~/.metabot-core/token` | metabot-core Bearer Token（在 `<METABOT_CORE_URL>/cli` 自助生成） |
 | `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步 |

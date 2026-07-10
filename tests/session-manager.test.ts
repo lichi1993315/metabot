@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SessionManager } from '../src/engines/claude/session-manager.js';
+import { sanitizeWorkspaceSegment, SessionManager } from '../src/engines/claude/session-manager.js';
 
 function createLogger() {
   return { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn(), child: vi.fn() } as any;
@@ -124,5 +124,69 @@ describe('SessionManager', () => {
     expect(session.sessionIdEngine).toBeUndefined();
 
     rmSync(defaultDir, { recursive: true, force: true });
+  });
+
+  it('creates managed per-chat working directories when chatWorkspace is enabled', () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'metabot-chat-workspaces-'));
+    manager = new SessionManager('/tmp/test-dir', createLogger(), 'metabot', {
+      enabled: true,
+      baseDir,
+    });
+
+    const session = manager.getSession('oc:abc/123');
+
+    expect(session.workingDirectory).toBe(join(
+      baseDir,
+      'metabot',
+      sanitizeWorkspaceSegment('oc:abc/123'),
+    ));
+    expect(existsSync(session.workingDirectory)).toBe(true);
+
+    rmSync(baseDir, { recursive: true, force: true });
+  });
+
+  it('honors per-chat workspace disable overrides', () => {
+    const defaultDir = mkdtempSync(join(tmpdir(), 'metabot-session-default-'));
+    const baseDir = mkdtempSync(join(tmpdir(), 'metabot-chat-workspaces-'));
+    manager = new SessionManager(defaultDir, createLogger(), 'metabot', {
+      enabled: true,
+      baseDir,
+      chats: {
+        trusted: { enabled: false },
+      },
+    });
+
+    expect(manager.getSession('trusted').workingDirectory).toBe(defaultDir);
+    expect(manager.getSession('default-chat').workingDirectory).toBe(join(baseDir, 'metabot', 'default-chat'));
+
+    rmSync(defaultDir, { recursive: true, force: true });
+    rmSync(baseDir, { recursive: true, force: true });
+  });
+
+  it('migrates persisted sessions from the default directory into managed chat workspaces', () => {
+    const defaultDir = mkdtempSync(join(tmpdir(), 'metabot-session-default-'));
+    const baseDir = mkdtempSync(join(tmpdir(), 'metabot-chat-workspaces-'));
+    const storePath = join(storeDir, 'sessions-workspace-test.json');
+    writeFileSync(storePath, JSON.stringify({
+      chat1: {
+        sessionId: 'repo-bound-session',
+        sessionIdEngine: 'codex',
+        workingDirectory: defaultDir,
+        lastUsed: Date.now(),
+      },
+    }));
+
+    manager = new SessionManager(defaultDir, createLogger(), 'workspace-test', {
+      enabled: true,
+      baseDir,
+    });
+    const session = manager.getSession('chat1');
+
+    expect(session.workingDirectory).toBe(join(baseDir, 'workspace-test', 'chat1'));
+    expect(session.sessionId).toBeUndefined();
+    expect(session.sessionIdEngine).toBeUndefined();
+
+    rmSync(defaultDir, { recursive: true, force: true });
+    rmSync(baseDir, { recursive: true, force: true });
   });
 });

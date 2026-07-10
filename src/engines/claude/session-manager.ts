@@ -1,9 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { createHash } from 'node:crypto';
 import type { Logger } from '../../utils/logger.js';
 import type { EngineName } from '../types.js';
-import type { CodexReasoningEffort } from '../../config.js';
+import type { ChatWorkspaceConfig, CodexReasoningEffort } from '../../config.js';
 
 export interface UserSession {
   sessionId: string | undefined;
@@ -67,6 +68,23 @@ const SESSION_TTL_MS = Infinity;
 const MAX_SESSIONS = 10_000;
 export const DEFAULT_CODEX_GOAL_MAX_ITERATIONS = 25;
 
+interface ResolvedWorkingDirectory {
+  workingDirectory: string;
+  managedByChatWorkspace: boolean;
+  enforceDirectory: boolean;
+}
+
+export function sanitizeWorkspaceSegment(value: string): string {
+  const trimmed = value.trim();
+  const cleaned = trimmed.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^_+|_+$/g, '');
+  const base = cleaned && cleaned !== '.' && cleaned !== '..'
+    ? cleaned.slice(0, 80)
+    : 'chat';
+  if (base === trimmed && trimmed.length <= 80) return base;
+  const hash = createHash('sha256').update(value).digest('hex').slice(0, 8);
+  return `${base}_${hash}`;
+}
+
 export class SessionManager {
   private sessions = new Map<string, UserSession>();
   private cleanupTimer: ReturnType<typeof setInterval>;
@@ -75,7 +93,8 @@ export class SessionManager {
   constructor(
     private defaultWorkingDirectory: string,
     private logger: Logger,
-    botName: string = 'default',
+    private botName: string = 'default',
+    private chatWorkspace?: ChatWorkspaceConfig,
   ) {
     // Persist sessions to a file under the project data dir
     const dataDir = process.env.SESSION_STORE_DIR
@@ -91,14 +110,16 @@ export class SessionManager {
 
   getSession(chatId: string): UserSession {
     let session = this.sessions.get(chatId);
+    const resolvedWorkingDirectory = this.resolveWorkingDirectory(chatId);
     if (!session) {
       // Evict least-recently-used session if at capacity
       if (this.sessions.size >= MAX_SESSIONS) {
         this.evictOldest();
       }
+      this.ensureManagedWorkingDirectory(chatId, resolvedWorkingDirectory);
       session = {
         sessionId: undefined,
-        workingDirectory: this.defaultWorkingDirectory,
+        workingDirectory: resolvedWorkingDirectory.workingDirectory,
         lastUsed: Date.now(),
         cumulativeTokens: 0,
         cumulativeCostUsd: 0,
@@ -107,7 +128,80 @@ export class SessionManager {
       this.sessions.set(chatId, session);
     }
     session.lastUsed = Date.now();
-    if (!fs.existsSync(session.workingDirectory) && fs.existsSync(this.defaultWorkingDirectory)) {
+    this.reconcileWorkingDirectory(chatId, session, resolvedWorkingDirectory);
+    return session;
+  }
+
+  private resolveWorkingDirectory(chatId: string): ResolvedWorkingDirectory {
+    const chatPolicy = this.chatWorkspace?.chats?.[chatId];
+    if (chatPolicy?.workingDirectory) {
+      return {
+        workingDirectory: chatPolicy.workingDirectory,
+        managedByChatWorkspace: true,
+        enforceDirectory: true,
+      };
+    }
+
+    const enabled = chatPolicy?.enabled ?? this.chatWorkspace?.enabled ?? false;
+    if (!enabled) {
+      return {
+        workingDirectory: this.defaultWorkingDirectory,
+        managedByChatWorkspace: false,
+        enforceDirectory: !!this.chatWorkspace,
+      };
+    }
+
+    const baseDir = this.chatWorkspace?.baseDir ?? path.join(os.homedir(), '.metabot', 'workspaces');
+    return {
+      workingDirectory: path.join(
+        baseDir,
+        sanitizeWorkspaceSegment(this.botName),
+        sanitizeWorkspaceSegment(chatId),
+      ),
+      managedByChatWorkspace: true,
+      enforceDirectory: true,
+    };
+  }
+
+  private ensureManagedWorkingDirectory(chatId: string, resolved: ResolvedWorkingDirectory): void {
+    if (!resolved.managedByChatWorkspace) return;
+    try {
+      fs.mkdirSync(resolved.workingDirectory, { recursive: true });
+    } catch (err) {
+      this.logger.warn(
+        { err, chatId, workingDirectory: resolved.workingDirectory },
+        'Failed to create managed chat working directory',
+      );
+    }
+  }
+
+  private reconcileWorkingDirectory(
+    chatId: string,
+    session: UserSession,
+    resolved: ResolvedWorkingDirectory,
+  ): void {
+    this.ensureManagedWorkingDirectory(chatId, resolved);
+
+    const current = path.resolve(session.workingDirectory);
+    const expected = path.resolve(resolved.workingDirectory);
+    if (resolved.enforceDirectory && current !== expected) {
+      const shouldMigrate = resolved.managedByChatWorkspace
+        ? this.chatWorkspace?.migrateFromDefaultWorkingDirectory !== false
+        : true;
+      if (shouldMigrate) {
+        this.logger.info(
+          { chatId, from: session.workingDirectory, to: resolved.workingDirectory },
+          'Switching session working directory',
+        );
+        session.workingDirectory = resolved.workingDirectory;
+        session.sessionId = undefined;
+        session.sessionIdEngine = undefined;
+        this.saveToDisk();
+      }
+      return;
+    }
+
+    if (!resolved.managedByChatWorkspace && !fs.existsSync(session.workingDirectory) && fs.existsSync(this.defaultWorkingDirectory)) {
       this.logger.warn(
         { chatId, workingDirectory: session.workingDirectory, fallback: this.defaultWorkingDirectory },
         'Session working directory no longer exists; falling back to bot default',
@@ -117,7 +211,6 @@ export class SessionManager {
       session.sessionIdEngine = undefined;
       this.saveToDisk();
     }
-    return session;
   }
 
   private evictOldest(): void {

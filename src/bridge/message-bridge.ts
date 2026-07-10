@@ -270,7 +270,12 @@ export class MessageBridge {
     this.executor = this.engine.createExecutor();
     const defaultEngineName = resolveEngineName(config);
     this.engineCache.set(defaultEngineName, { engine: this.engine, executor: this.executor });
-    this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger, config.name);
+    this.sessionManager = new SessionManager(
+      config.claude.defaultWorkingDirectory,
+      logger,
+      config.name,
+      config.chatWorkspace,
+    );
     this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, logger);
     this.audit = new AuditLogger(logger);
     this.costTracker = new CostTracker();

@@ -40,6 +40,18 @@ export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 export type CodexApprovalPolicy = 'untrusted' | 'on-failure' | 'on-request' | 'never';
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 
+export interface ChatWorkspacePolicy {
+  enabled?: boolean;
+  workingDirectory?: string;
+}
+
+export interface ChatWorkspaceConfig {
+  enabled?: boolean;
+  baseDir?: string;
+  migrateFromDefaultWorkingDirectory?: boolean;
+  chats?: Record<string, ChatWorkspacePolicy>;
+}
+
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
   name: string;
@@ -76,6 +88,13 @@ export interface BotConfigBase {
   memoryPublic?: boolean;
   /** Agent engine. Defaults to 'codex' unless METABOT_ENGINE or bots.json overrides it. */
   engine?: EngineName;
+  /**
+   * Optional per-chat working directories. When enabled, new/default sessions
+   * use <baseDir>/<botName>/<chatId> instead of the bot's project directory.
+   * This lets workspace-write sandboxes allow local scratch writes without
+   * granting writes to the bot's source checkout.
+   */
+  chatWorkspace?: ChatWorkspaceConfig;
   claude: {
     defaultWorkingDirectory: string;
     maxTurns: number | undefined;
@@ -296,6 +315,7 @@ interface EngineJsonFields {
   engine?: EngineName;
   kimi?: KimiJsonConfig;
   codex?: CodexJsonConfig;
+  chatWorkspace?: ChatWorkspaceConfig;
   /** Claude turn backend: 'pty' (default) or 'sdk' (legacy opt-out). Overrides env CLAUDE_BACKEND. */
   backend?: 'sdk' | 'pty';
 }
@@ -328,6 +348,7 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
   const codex = buildCodexConfig(entry.codex);
+  const chatWorkspace = buildChatWorkspaceConfig(entry.chatWorkspace);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -341,6 +362,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.memoryPublic !== undefined ? { memoryPublic: entry.memoryPublic } : {}),
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     feishu: {
@@ -378,6 +400,7 @@ export interface TelegramBotJsonEntry extends EngineJsonFields {
 
 function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
   const codex = buildCodexConfig(entry.codex);
+  const chatWorkspace = buildChatWorkspaceConfig(entry.chatWorkspace);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -390,6 +413,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     ...(entry.visible !== undefined ? { visible: entry.visible } : {}),
     ...(entry.memoryPublic !== undefined ? { memoryPublic: entry.memoryPublic } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     telegram: {
@@ -424,6 +448,7 @@ export interface WebBotJsonEntry extends EngineJsonFields {
 
 export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
   const codex = buildCodexConfig(entry.codex);
+  const chatWorkspace = buildChatWorkspaceConfig(entry.chatWorkspace);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -436,6 +461,7 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.visible !== undefined ? { visible: entry.visible } : {}),
     ...(entry.memoryPublic !== undefined ? { memoryPublic: entry.memoryPublic } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     claude: buildClaudeConfig(entry),
@@ -464,12 +490,14 @@ export interface WechatBotJsonEntry extends EngineJsonFields {
 
 function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
   const codex = buildCodexConfig(entry.codex);
+  const chatWorkspace = buildChatWorkspaceConfig(entry.chatWorkspace);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
     ...(entry.visible !== undefined ? { visible: entry.visible } : {}),
     ...(entry.memoryPublic !== undefined ? { memoryPublic: entry.memoryPublic } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
     wechat: {
@@ -477,6 +505,39 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
       botToken: entry.wechatBotToken,
     },
     claude: buildClaudeConfig(entry),
+  };
+}
+
+function parseOptionalBoolean(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return undefined;
+}
+
+function buildChatWorkspaceConfig(entry?: ChatWorkspaceConfig): ChatWorkspaceConfig | undefined {
+  const envEnabled = parseOptionalBoolean(process.env.METABOT_CHAT_WORKSPACE_ENABLED);
+  const envBaseDir = process.env.METABOT_CHAT_WORKSPACE_BASE_DIR;
+  if (!entry && envEnabled === undefined && !envBaseDir) return undefined;
+
+  const rawBaseDir = entry?.baseDir ?? envBaseDir ?? path.join(os.homedir(), '.metabot', 'workspaces');
+  const chats = Object.fromEntries(
+    Object.entries(entry?.chats ?? {}).map(([chatId, policy]) => [
+      chatId,
+      {
+        ...(policy.enabled !== undefined ? { enabled: policy.enabled } : {}),
+        ...(policy.workingDirectory ? { workingDirectory: expandUserPath(policy.workingDirectory) } : {}),
+      },
+    ]),
+  );
+
+  return {
+    enabled: entry?.enabled ?? envEnabled ?? true,
+    baseDir: expandUserPath(rawBaseDir),
+    ...(entry?.migrateFromDefaultWorkingDirectory !== undefined
+      ? { migrateFromDefaultWorkingDirectory: entry.migrateFromDefaultWorkingDirectory }
+      : {}),
+    ...(Object.keys(chats).length > 0 ? { chats } : {}),
   };
 }
 
@@ -531,9 +592,11 @@ function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
 
 function feishuBotFromEnv(): BotConfig {
   const codex = buildCodexConfig();
+  const chatWorkspace = buildChatWorkspaceConfig();
   return {
     name: 'default',
     ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(codex ? { codex } : {}),
     feishu: {
       appId: required('FEISHU_APP_ID'),
@@ -554,9 +617,11 @@ function feishuBotFromEnv(): BotConfig {
 
 function telegramBotFromEnv(): TelegramBotConfig {
   const codex = buildCodexConfig();
+  const chatWorkspace = buildChatWorkspaceConfig();
   return {
     name: 'telegram-default',
     ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(codex ? { codex } : {}),
     telegram: {
       botToken: required('TELEGRAM_BOT_TOKEN'),
@@ -576,9 +641,11 @@ function telegramBotFromEnv(): TelegramBotConfig {
 
 function wechatBotFromEnv(): WechatBotConfig {
   const codex = buildCodexConfig();
+  const chatWorkspace = buildChatWorkspaceConfig();
   return {
     name: 'wechat-default',
     ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...(chatWorkspace ? { chatWorkspace } : {}),
     ...(codex ? { codex } : {}),
     wechat: {
       botToken: process.env.WECHAT_BOT_TOKEN || undefined,

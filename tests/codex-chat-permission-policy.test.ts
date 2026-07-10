@@ -1,5 +1,5 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { BotConfigBase, CodexBotConfig } from '../src/config.js';
@@ -100,6 +100,13 @@ describe('Codex chat permission config loading', () => {
             name: 'web-codex',
             engine: 'codex',
             defaultWorkingDirectory: dir,
+            chatWorkspace: {
+              enabled: true,
+              baseDir: '~/metabot-test-workspaces',
+              chats: {
+                oc_write: { enabled: false },
+              },
+            },
             codex: {
               chatPermissions: {
                 default: {
@@ -131,6 +138,13 @@ describe('Codex chat permission config loading', () => {
             sandbox: 'danger-full-access',
             dangerouslyBypassApprovalsAndSandbox: true,
           },
+        },
+      });
+      expect(config.webBots[0].chatWorkspace).toEqual({
+        enabled: true,
+        baseDir: join(homedir(), 'metabot-test-workspaces'),
+        chats: {
+          oc_write: { enabled: false },
         },
       });
     } finally {

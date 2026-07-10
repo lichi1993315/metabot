@@ -331,6 +331,7 @@ export class TaskScheduler {
       clearTimeout(timer);
     }
     this.recurringTimers.clear();
+    this.failExecutingTasksForShutdown();
     this.saveToDisk();
   }
 
@@ -419,6 +420,28 @@ export class TaskScheduler {
     }
 
     this.saveToDisk();
+  }
+
+  private failExecutingTasksForShutdown(): void {
+    for (const task of this.tasks.values()) {
+      if (task.status !== 'executing') continue;
+
+      task.status = 'failed';
+      this.logger.warn(
+        { taskId: task.id, botName: task.botName, chatId: task.chatId },
+        'Marked executing scheduled task failed during scheduler shutdown',
+      );
+
+      if (!task.parentRecurringId) continue;
+
+      const recurring = this.recurringTasks.get(task.parentRecurringId);
+      if (!recurring || recurring.currentChildId !== task.id) continue;
+
+      recurring.currentChildId = undefined;
+      if (recurring.status === 'active') {
+        recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+      }
+    }
   }
 
   // ===== Recurring timer internals =====
@@ -533,14 +556,24 @@ export class TaskScheduler {
         recurringList = (parsed as PersistedData).recurringTasks || [];
       }
 
+      let persistChanged = false;
+
       // Restore one-time tasks
       for (const task of taskList) {
+        // A process shutdown can leave an in-flight task persisted as executing.
+        // That execution cannot be resumed safely, so mark it failed on restore.
+        if (task.status === 'executing') {
+          task.status = 'failed';
+          persistChanged = true;
+        }
+
         // Skip completed/cancelled/failed tasks
         if (task.status !== 'pending') continue;
 
         // Skip tasks that are more than 24h overdue (stale)
         if (task.executeAt < now - STALE_THRESHOLD_MS) {
           this.logger.info({ taskId: task.id }, 'Skipping stale scheduled task (>24h overdue)');
+          persistChanged = true;
           continue;
         }
 
@@ -560,12 +593,18 @@ export class TaskScheduler {
             const child = taskList.find((t) => t.id === recurring.currentChildId);
             if (child && (child.status === 'pending' || child.status === 'executing')) {
               child.status = 'failed';
+              persistChanged = true;
             }
             recurring.currentChildId = undefined;
+            persistChanged = true;
           }
 
           // Recompute next occurrence from now (no catch-up for missed occurrences)
-          recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+          const nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+          if (recurring.nextExecuteAt !== nextExecuteAt) {
+            persistChanged = true;
+          }
+          recurring.nextExecuteAt = nextExecuteAt;
           this.setRecurringTimer(recurring);
         }
       }
@@ -577,6 +616,10 @@ export class TaskScheduler {
           { tasks: restoredTasks, recurring: restoredRecurring },
           'Restored scheduled tasks from disk',
         );
+      }
+
+      if (persistChanged) {
+        this.saveToDisk();
       }
     } catch (err) {
       this.logger.error({ err }, 'Failed to load scheduled tasks from disk');

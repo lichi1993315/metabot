@@ -271,6 +271,101 @@ describe('TaskScheduler - Recurring Tasks', () => {
     scheduler2.destroy();
   });
 
+  it('marks executing recurring child failed on destroy', async () => {
+    const logger = createMockLogger();
+    const executeApiTask = vi.fn().mockReturnValue(new Promise(() => { /* keep task executing */ }));
+    const registry = {
+      get: vi.fn().mockReturnValue({
+        bridge: {
+          isBusy: vi.fn().mockReturnValue(false),
+          executeApiTask,
+        },
+        sender: {
+          sendTextNotice: vi.fn().mockResolvedValue(undefined),
+        },
+      }),
+      list: vi.fn().mockReturnValue([]),
+      register: vi.fn(),
+      deregister: vi.fn(),
+    } as unknown as BotRegistry;
+
+    let callCount = 0;
+    mockNextCron.mockImplementation(() => {
+      callCount++;
+      return Date.now() + (callCount === 1 ? 100 : 60_000);
+    });
+
+    const scheduler = new TaskScheduler(registry, logger);
+    const recurring = scheduler.scheduleRecurring({
+      botName: 'testbot', chatId: 'chat1', prompt: 'Do work', cronExpr: '* * * * *',
+    });
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(executeApiTask).toHaveBeenCalled();
+
+    scheduler.destroy();
+
+    const persisted = JSON.parse(fs.readFileSync(PERSIST_FILE, 'utf-8'));
+    const child = persisted.tasks.find((task: any) => task.parentRecurringId === recurring.id);
+    const persistedRecurring = persisted.recurringTasks.find((task: any) => task.id === recurring.id);
+
+    expect(child?.status).toBe('failed');
+    expect(persistedRecurring?.currentChildId).toBeUndefined();
+    expect(persistedRecurring?.nextExecuteAt).toBe(Date.now() + 60_000);
+  });
+
+  it('cleans interrupted recurring child state on restore and persists cleanup', () => {
+    const now = Date.now();
+    mockNextCron.mockReturnValue(now + 60_000);
+
+    fs.mkdirSync(PERSIST_DIR, { recursive: true });
+    fs.writeFileSync(PERSIST_FILE, JSON.stringify({
+      tasks: [
+        {
+          id: 'child-1',
+          botName: 'b',
+          chatId: 'c',
+          prompt: 'p',
+          executeAt: now - 1_000,
+          sendCards: true,
+          status: 'executing',
+          createdAt: now - 1_000,
+          retryCount: 0,
+          parentRecurringId: 'recurring-1',
+        },
+      ],
+      recurringTasks: [
+        {
+          id: 'recurring-1',
+          botName: 'b',
+          chatId: 'c',
+          prompt: 'p',
+          cronExpr: '0 23 * * *',
+          timezone: 'Asia/Shanghai',
+          sendCards: true,
+          status: 'active',
+          createdAt: now - 60_000,
+          nextExecuteAt: now - 1_000,
+          currentChildId: 'child-1',
+        },
+      ],
+    }));
+
+    const scheduler = new TaskScheduler(createMockRegistry(), createMockLogger());
+    const restored = scheduler.getRecurringTask('recurring-1');
+    const persisted = JSON.parse(fs.readFileSync(PERSIST_FILE, 'utf-8'));
+    const persistedRecurring = persisted.recurringTasks.find((task: any) => task.id === 'recurring-1');
+
+    expect(restored?.currentChildId).toBeUndefined();
+    expect(restored?.nextExecuteAt).toBe(now + 60_000);
+    expect(scheduler.listTasks()).toHaveLength(0);
+    expect(persisted.tasks).toHaveLength(0);
+    expect(persistedRecurring?.currentChildId).toBeUndefined();
+    expect(persistedRecurring?.nextExecuteAt).toBe(now + 60_000);
+
+    scheduler.destroy();
+  });
+
   it('backward-compatible: loads old array format persist file', () => {
     // Write old-format persist file (plain array)
     fs.mkdirSync(PERSIST_DIR, { recursive: true });

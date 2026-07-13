@@ -19,6 +19,12 @@ describe('notify-only deployment', () => {
     expect(dockerignore).toMatch(/^web\/node_modules\/$/m);
   });
 
+  it('pins the Codex CLI required by production bot engines', () => {
+    const dockerfile = readFileSync('Dockerfile', 'utf8');
+
+    expect(dockerfile).toContain('@openai/codex@0.144.1');
+  });
+
   it('defines a distinct bounded PM2 process without credentials', () => {
     const config = require('../ecosystem.config.cjs');
     const app = config.apps.find((entry: any) => entry.name === 'metabot-notify-only');

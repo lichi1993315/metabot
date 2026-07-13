@@ -21,8 +21,9 @@ WORKDIR /app
 # Install runtime deps for better-sqlite3 and Claude CLI
 RUN apt-get update && apt-get install -y python3 make g++ git curl && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Install agent CLIs. Codex is pinned to the version used by the current
+# production bridge so an image rebuild cannot silently change bot behavior.
+RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.144.1
 
 # Install production dependencies (rebuilds native modules for this stage)
 COPY package.json package-lock.json ./

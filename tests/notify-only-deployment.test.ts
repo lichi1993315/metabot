@@ -5,6 +5,20 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 
 describe('notify-only deployment', () => {
+  it('copies the complete workspace into the Docker build without secrets', () => {
+    const dockerfile = readFileSync('Dockerfile', 'utf8');
+    const dockerignore = readFileSync('.dockerignore', 'utf8');
+    const builderStage = dockerfile.split('# ---- Runtime stage ----')[0];
+
+    expect(builderStage).toContain('COPY . .');
+    expect(builderStage.indexOf('COPY . .')).toBeLessThan(builderStage.indexOf('RUN npm ci'));
+    expect(builderStage.indexOf('RUN npm ci')).toBeLessThan(builderStage.indexOf('RUN npm run build'));
+    expect(dockerignore).toMatch(/^\.env$/m);
+    expect(dockerignore).toMatch(/^bots\.json$/m);
+    expect(dockerignore).toMatch(/^node_modules\/$/m);
+    expect(dockerignore).toMatch(/^web\/node_modules\/$/m);
+  });
+
   it('defines a distinct bounded PM2 process without credentials', () => {
     const config = require('../ecosystem.config.cjs');
     const app = config.apps.find((entry: any) => entry.name === 'metabot-notify-only');

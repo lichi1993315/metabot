@@ -6,19 +6,11 @@ WORKDIR /app
 # Install build dependencies for native modules (better-sqlite3)
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
-# Install backend dependencies
-COPY package.json package-lock.json ./
+# Copy the complete workspace before npm install so npm can link every workspace.
+# Runtime credentials and state remain excluded by .dockerignore.
+COPY . .
 RUN npm ci
-
-# Install web dependencies
-COPY web/package.json web/package-lock.json ./web/
 RUN cd web && npm ci --include=dev
-
-# Copy source and build
-COPY tsconfig.json ./
-COPY src/ ./src/
-COPY web/ ./web/
-
 RUN npm run build
 
 # ---- Runtime stage ----
